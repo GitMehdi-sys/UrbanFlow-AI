@@ -23,10 +23,12 @@ class AgentSUMOConfig:
     # Project root
     PROJECT_ROOT = Path(__file__).parent.parent.parent
 
-    # Data directories
-    DATA_DIR = PROJECT_ROOT / "data"
-    OUTPUT_DIR = PROJECT_ROOT / "output"
-    CHECKPOINTS_DIR = PROJECT_ROOT / "checkpoints"
+    # Source checkout by default; installed wheels use the invoking workspace.
+    WORKSPACE_ROOT = Path(os.environ.get("AGENTSUMO_MCP_OUTPUT_BASE", str(PROJECT_ROOT if (PROJECT_ROOT / 'pyproject.toml').exists() else Path.cwd()))).resolve()
+    os.environ.setdefault("AGENTSUMO_MCP_OUTPUT_BASE", str(WORKSPACE_ROOT))
+    DATA_DIR = WORKSPACE_ROOT / "data"
+    OUTPUT_DIR = WORKSPACE_ROOT / "output"
+    CHECKPOINTS_DIR = WORKSPACE_ROOT / "checkpoints"
 
     # Legacy token files (still honored as a fallback for existing setups
     # that predate the .env-based workflow). New installations should set
@@ -100,12 +102,16 @@ class AgentSUMOConfig:
         """
         env_token = os.environ.get("MAPBOX_TOKEN") or os.environ.get("MAPBOX_ACCESS_TOKEN")
         if env_token:
+            if not env_token.startswith('pk.'):
+                raise RuntimeError('Use a public Mapbox token (pk.), never a private token in the browser.')
             return env_token
 
         if cls.MAPBOX_TOKEN_FILE.exists():
             with open(cls.MAPBOX_TOKEN_FILE, "r") as f:
                 token = f.read().strip()
                 if token:
+                    if not token.startswith('pk.'):
+                        raise RuntimeError('Use a public Mapbox token (pk.), never a private token in the browser.')
                     import warnings
                     warnings.warn(
                         "Reading the Mapbox token from mapbox_token.txt is "
@@ -125,8 +131,8 @@ class AgentSUMOConfig:
     @classmethod
     def ensure_directories(cls):
         """Create the output directory tree if it does not yet exist."""
-        cls.DATA_DIR.mkdir(exist_ok=True)
-        cls.OUTPUT_DIR.mkdir(exist_ok=True)
+        cls.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        cls.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
         for sub in ("networks", "trips", "simulations", "analysis", "reports", "visualizations"):
             (cls.OUTPUT_DIR / sub).mkdir(exist_ok=True)

@@ -12,7 +12,7 @@ import logging
 import threading
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from xml.etree.ElementTree import Element, SubElement, ElementTree
+from xml.etree.ElementTree import Element, SubElement, ElementTree, parse
 
 from agentsumo_mcp.settings.settings import sumo_environment, simulation_settings
 from agentsumo_mcp.utils.defaults import ensure_vehicle_types_default
@@ -20,6 +20,7 @@ from agentsumo_mcp.utils.file_utils import copy_to_workdir, copy_additional_file
 from agentsumo_mcp.utils.path_utils import get_output_path, get_working_directory
 
 logger = logging.getLogger(__name__)
+_simulation_lock = threading.Lock()
 
 
 class SimulationRunner:
@@ -29,7 +30,16 @@ class SimulationRunner:
         self.environment = sumo_environment
         self.sim_settings = simulation_settings
 
-    def run(
+    def run(self, *args, **kwargs):
+        """Only one TraCI connection may own the default process at a time."""
+        if not _simulation_lock.acquire(blocking=False):
+            return {"status": "error", "output_files": [], "message": "A simulation is already running in this process", "simulation_time": 0}
+        try:
+            return self._run_exclusive(*args, **kwargs)
+        finally:
+            _simulation_lock.release()
+
+    def _run_exclusive(
         self,
         net_file: str,
         trip_file: Optional[str] = None,
@@ -75,7 +85,7 @@ class SimulationRunner:
                 additional_files = additional_files or []
 
             # Generate unique output file names
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             base_name = Path(net_file).stem if net_file else "simulation"
             prefix = base_name
 
@@ -372,7 +382,7 @@ class SimulationRunner:
 
     def _generate_additional_file(self, output_path: Path, output_files: Dict[str, str], duration: int) -> str:
         """Generate additional.add.xml file for simulation."""
-        add_file = "additional.add.xml"
+        add_file = output_files['netstate_dump'].replace('.xml', '.add.xml')
         add_path = output_path / add_file
 
         add_root = Element("additional")
@@ -411,7 +421,20 @@ class SimulationRunner:
             SubElement(input_tag, "trip-files", {"value": file_names["trip_file"]})
 
         # Additional files
-        additional_files_list = [add_file, "vehicle_types.add.xml"]
+        # Scenario-defined vehicle types take precedence over bundled defaults.
+        defined = set()
+        for name in [file_names.get('route_file'), file_names.get('trip_file'), *additional_file_names]:
+            if name:
+                for element in parse(output_path / name).getroot().iter():
+                    if element.tag in ('vType', 'vTypeDistribution') and element.get('id'):
+                        defined.add(element.get('id'))
+        defaults = parse(output_path / 'vehicle_types.add.xml')
+        for element in list(defaults.getroot()):
+            if element.get('id') in defined:
+                defaults.getroot().remove(element)
+        default_name = f'vehicle_types_{timestamp}.add.xml'
+        defaults.write(output_path / default_name, encoding='utf-8', xml_declaration=True)
+        additional_files_list = [add_file, default_name]
         additional_files_list.extend(additional_file_names)
         SubElement(input_tag, "additional-files", {
             "value": ",".join(additional_files_list)
@@ -495,7 +518,7 @@ class SimulationRunner:
                 elapsed_wall = time.time() - start_time
                 if elapsed_wall >= wall_timeout:
                     logger.warning(f"Wall-clock timeout ({wall_timeout}s) reached, forcing stop")
-                    break
+                    raise TimeoutError(f"SUMO exceeded wall-clock timeout ({wall_timeout}s)")
 
                 traci.simulationStep()
                 step_count += 1
@@ -601,10 +624,10 @@ class SimulationRunner:
 
         if result.returncode != 0:
             return {
-                "status": "warning",
-                "output_files": [tripinfo_abs, edgedata_abs, edgedata_emission_abs],
+                "status": "error",
+                "output_files": [],
                 "summary_xml": summary_abs,
-                "message": f"Simulation completed with warnings in {result.elapsed:.2f} seconds\n{result.stderr}",
+                "message": f"Simulation failed after {result.elapsed:.2f} seconds\n{result.stderr}",
                 "simulation_time": result.elapsed,
                 "metadata": {
                     "working_directory": str(base_dir),
@@ -619,6 +642,8 @@ class SimulationRunner:
                 }
             }
 
+        if not all(Path(p).is_file() and Path(p).stat().st_size > 0 for p in (tripinfo_abs, edgedata_abs, edgedata_emission_abs)):
+            return {"status": "error", "output_files": [], "message": "SUMO produced no usable output files", "simulation_time": result.elapsed}
         return {
             "status": "success",
             "output_files": [tripinfo_abs, edgedata_abs, edgedata_emission_abs],

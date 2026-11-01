@@ -50,6 +50,16 @@ docs/_build/
 # Environment
 .env
 .env.local
+.env.*
+!.env.example
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+*.zip
+*.whl
+*.pem
+*.key
 
 # Excluded directories (not part of core AgentSUMO)
 SUMOLanguageExpert/

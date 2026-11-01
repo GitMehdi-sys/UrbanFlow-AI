@@ -14,6 +14,8 @@ from mcp.client.stdio import stdio_client
 from typing import Any, Optional, List
 from pathlib import Path
 import asyncio
+import sys
+import importlib.util
 import logging
 
 from agentsumo.core.config import AgentSUMOConfig
@@ -86,24 +88,14 @@ class SQLiteMCPClient:
         
         logger.info("Connecting to SQLite MCP Server")
 
-        # Server parameters (using Python-based MCP server)
-        # Anthropic's official SQLite MCP server example is bundled inside the project
-        # Original - https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite
-        sqlite_server_path = AgentSUMOConfig.PROJECT_ROOT / "sqlite-mcp-server" / "src" / "sqlite"
-        
+        if importlib.util.find_spec('mcp_server_sqlite') is None:
+            raise RuntimeError('SQLite assistant tools require mcp-server-sqlite. Install the project dependencies in the active Python environment.')
         server_params = StdioServerParameters(
-            command="uv",
-            args=[
-                "--directory",
-                str(sqlite_server_path),
-                "run",
-                "mcp-server-sqlite",
-                "--db-path",
-                self.db_path
-            ],
+            command=sys.executable,
+            args=['-c', 'from mcp_server_sqlite import main; main()', '--db-path', self.db_path],
             env=None
         )
-        
+
         try:
             # STDIO connection
             self._stdio_context_manager = stdio_client(server_params)

@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional, Callable
 import json
 import logging
 import os
+import asyncio
 import re
 from types import SimpleNamespace
 from datetime import datetime, timezone
@@ -95,7 +96,7 @@ class AgentSUMO:
         self.provider = AgentSUMOConfig.get_llm_provider()
         if self.provider == "anthropic":
             self.claude = anthropic.Anthropic(
-                api_key=AgentSUMOConfig.get_claude_api_key()
+                api_key=AgentSUMOConfig.get_claude_api_key(), timeout=60.0, max_retries=1
             )
             self.groq = None
         else:
@@ -107,7 +108,7 @@ class AgentSUMO:
                 ) from exc
             self.groq = OpenAI(
                 api_key=AgentSUMOConfig.get_groq_api_key(),
-                base_url="https://api.groq.com/openai/v1",
+                base_url="https://api.groq.com/openai/v1", timeout=60.0, max_retries=1,
             )
             self.claude = None
 
@@ -249,7 +250,7 @@ class AgentSUMO:
         for name, role in SPECIALIST_AGENTS:
             await self._emit_progress(name, "started", f"{name} is reviewing the mission")
             try:
-                finding = self._call_specialist(name, role, user_message, state_summary)
+                finding = await asyncio.to_thread(self._call_specialist, name, role, user_message, state_summary)
                 findings.append(f"### {name}\n{finding}")
                 await self._emit_progress(name, "completed", f"{name} submitted a finding")
             except Exception as exc:
@@ -528,7 +529,7 @@ class AgentSUMO:
                 logger.debug(f"Prompt build time. {prompt_time:.2f}s")
 
             claude_start = time.time()
-            response = self._call_model(system_prompt)
+            response = await asyncio.to_thread(self._call_model, system_prompt)
             claude_time = time.time() - claude_start
             logger.debug(f"Claude API call time. {claude_time:.2f}s")
 
@@ -828,7 +829,7 @@ class AgentSUMO:
         # Call Claude again with the results
         # If _call_claude() fails, history is corrupted and must be repaired
         try:
-            final_response = self._call_model()
+            final_response = await asyncio.to_thread(self._call_model)
         except Exception as e:
             # Claude API call failed. tool_use + tool_result are already in history, so
             # append an empty assistant response to keep history consistent

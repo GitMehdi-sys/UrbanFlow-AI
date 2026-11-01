@@ -19,6 +19,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from typing import Any, Optional, List, Union
 import asyncio
+import shutil
 import logging
 
 logger = logging.getLogger("agentsumo.filesystem_mcp_client")
@@ -89,7 +90,7 @@ class FilesystemMCPClient:
         logger.info("Connecting to Filesystem MCP Server")
 
         server_params = StdioServerParameters(
-            command="npx",
+            command=shutil.which("npx") or "npx",
             args=[
                 "-y",
                 "@modelcontextprotocol/server-filesystem",

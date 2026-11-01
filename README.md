@@ -1,24 +1,20 @@
 <div align="center">
 
-# AgentSUMO
+<img src="web/static/ditwin-logo.svg" alt="Ditwin logo" width="240" />
 
-**An Agentic Framework for Interactive Simulation Scenario Generation in SUMO via Large Language Models**
+# Ditwin
 
-[![PyPI](https://img.shields.io/pypi/v/agentsumo-mcp.svg)](https://pypi.org/project/agentsumo-mcp/)
-[![tests](https://github.com/mw-jeong/AgentSUMO/actions/workflows/tests.yml/badge.svg)](https://github.com/mw-jeong/AgentSUMO/actions/workflows/tests.yml)
-[![arXiv](https://img.shields.io/badge/arXiv-2511.06804-b31b1b.svg)](https://arxiv.org/abs/2511.06804)
-[![Docs](https://readthedocs.org/projects/agentsumo/badge/?version=latest)](https://agentsumo.readthedocs.io/en/latest/?badge=latest)
+### Explore the city. Simulate scenarios. Support informed decisions.
+
+A digital twin workspace for road simulation and water planning, focused on Laâyoune.
+
+[![Tests](https://github.com/its-Medd/UrbanFlow-AI/actions/workflows/tests.yml/badge.svg)](https://github.com/its-Medd/UrbanFlow-AI/actions/workflows/tests.yml)
+![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.13-3776AB?logo=python&logoColor=white)
+![Backend](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi&logoColor=white)
+![Simulation](https://img.shields.io/badge/Traffic-Eclipse%20SUMO-00549F)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-agentsumo--mcp-purple.svg)](https://registry.modelcontextprotocol.io/v0/servers?search=agentsumo)
 
-<img src="assets/hero_overview.png" alt="AgentSUMO overview" width="850"/>
-
-**[Documentation](https://agentsumo.readthedocs.io)** ·
-[Installation](#installation) ·
-[Tools](https://agentsumo.readthedocs.io/en/latest/mcp_servers/agentsumo/index.html) ·
-[Schema](https://agentsumo.readthedocs.io/en/latest/database/index.html) ·
-[Tutorials](https://agentsumo.readthedocs.io/en/latest/tutorials/index.html)
+[Overview](#overview) · [Installation](#installation) · [Configuration](#configuration) · [Architecture](#architecture) · [Team](#team)
 
 </div>
 
@@ -26,251 +22,290 @@
 
 ## Overview
 
-**AgentSUMO** lets non-expert stakeholders design, execute, and analyze [SUMO](https://eclipse.dev/sumo/) traffic simulations through natural-language interaction. The Planner Agent translates abstract policy questions into executable simulation plans, drives them via the Model Context Protocol (MCP), and surfaces results through a web dashboard.
+Ditwin brings geographic visualization, road simulation, and water balance forecasting into one workspace.
 
-- **Conversational scenario design** — describe a policy question, get a runnable simulation
-- **Policy experiments** — road closures, lane reductions, signal optimization, demand changes
-- **Cross-scenario analysis** — SQL-based comparison across runs, with auto-generated HTML reports
-- **Web dashboard** — geospatial visualization, time-series charts, and trip replay
+Explore mapped buildings in 3D, run SUMO simulations using imported road networks and traffic demand, and calculate water storage forecasts from supplied measurements. An optional AI assistant supports interaction with the simulation tools through the Model Context Protocol (MCP).
 
-## Demo
+The application starts with an empty workspace. Operational data must be imported by the user.
 
-<div align="center">
+## Features
 
-<img src="assets/demo_web_interface.png" alt="Web interface" width="800"/>
-
-*Web interface: conversational planning panel, scenario list, and live simulation status.*
-
-<br/><br/>
-
-<img src="assets/demo_geospatial.png" alt="Geospatial visualization" width="800"/>
-
-*Geospatial visualization: per-edge metrics, congestion overlays, and trip replay on the 2.5D basemap.*
-
-</div>
-
-## Architecture
-
-```
-User (natural language)
-    |
-    v
-Planner Agent (Claude LLM, Interactive Planning Protocol)
-    |
-    +--> AgentSUMO MCP Client --> AgentSUMO MCP Server (PyPI: agentsumo-mcp) --> SUMO
-    |
-    +--> SQLite MCP Client    --> SQLite MCP Server (Anthropic, open source)  --> simulations.db
-    |
-    +--> Filesystem MCP Client --> Filesystem MCP Server (Anthropic, open source) --> additional XML files
-```
-
-The reasoning layer (Planner Agent) lives in this repository. The execution layer (`agentsumo-mcp`) is published to PyPI and installed automatically as a dependency.
-
-## Tool Layer
-
-The AgentSUMO MCP Server exposes **26 tools** grouped into five capability categories that follow the simulation workflow. Full reference at [agentsumo.readthedocs.io/.../tools](https://agentsumo.readthedocs.io/en/latest/mcp_servers/agentsumo/index.html).
-
-| Category | Purpose | Representative tools |
-|---|---|---|
-| **Scenario Generation** | Build a baseline SUMO simulation: OSM → network → trips → routes → run | `osm_extract`, `net_convert`, `trip_generate`, `route_generate`, `sumo_runner` |
-| **Policy Experimentation** | Apply infrastructure, demand, and signal-control interventions | `edge_edit_tool`, `reduce_lanes_tool`, `vehicle_generation_tool`, `flow_generation_tool`, `tls_offset_tool`, `tls_adaptation_tool` |
-| **Result Analysis** | Convert SUMO XML output to SQLite and render HTML reports | `xml_to_sqlite_tool`, `simulation_report_tool` |
-| **Visualization** | Render networks, highlighted edges, and per-edge metric heatmaps | `visualize_net_tool`, `visualize_edge_tool`, `visualize_policy_target_tool`, `visualize_edgedata_tool` |
-| **Utility Functions** | Network statistics, routing, road-name ↔ edge-id resolution, OD-coordinate validation, web-search grounding | `network_summary_tool`, `route_analysis_tool`, `validate_od_coordinates_tool`, `web_search_tool` |
+| Capability | Description |
+|---|---|
+| **3D geographic workspace** | Explore Laâyoune using MapLibre, OpenStreetMap, and OpenFreeMap building geometry. |
+| **Road simulation** | Import georeferenced SUMO networks and matching demand, configure a run, and execute SUMO. |
+| **Recorded replay** | Review available simulation output through playback and geographic overlays. |
+| **Traffic analysis** | Inspect heatmaps and SQLite analysis generated from completed runs. |
+| **Water planning** | Import production, demand, storage, and capacity measurements to calculate storage forecasts. |
+| **Optional AI assistant** | Use a configured Anthropic or Groq provider with the existing MCP tool integration. |
+| **Explicit readiness states** | See whether simulation tools and AI credentials are configured before using them. |
 
 ## Installation
 
 ### Requirements
 
-- Python 3.10 or later
-- [SUMO](https://eclipse.dev/sumo/) 1.24 or later (locally installed, with `SUMO_HOME` set)
-- Anthropic Claude API key (bring-your-own-key)
-- Mapbox access token (used by the web map renderer)
+- Python **3.12 or 3.13**
+- Eclipse SUMO **1.24 or later** for traffic simulation
+- A browser with WebGL support
+- Internet access for map tiles and external browser resources
+- Node.js and npm for the optional filesystem MCP integration
+- An Anthropic or Groq API key to enable AI chat
 
-### 1. Install SUMO
+### Clone the repository
 
-**macOS**
 ```bash
-brew install sumo
-```
-Or download the installer from the [Eclipse SUMO downloads page](https://sumo.dlr.de/docs/Downloads.php).
-
-**Windows** — Download the installer from the [Eclipse SUMO downloads page](https://sumo.dlr.de/docs/Downloads.php).
-
-**Linux (Ubuntu/Debian)**
-```bash
-sudo add-apt-repository ppa:sumo/stable
-sudo apt-get update
-sudo apt-get install sumo sumo-tools sumo-doc
+git clone https://github.com/its-Medd/UrbanFlow-AI.git
+cd UrbanFlow-AI
 ```
 
-### 2. Set up the Python environment
+### Windows PowerShell
 
-Install [`uv`](https://docs.astral.sh/uv/):
-```bash
-# macOS / Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 
-# Windows (PowerShell)
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+
+Copy-Item .env.example .env
 ```
 
-Clone the repository, create a virtual environment, and install AgentSUMO:
+### Linux / macOS
+
 ```bash
-git clone https://github.com/mw-jeong/AgentSUMO
-cd AgentSUMO
+python3 -m venv .venv
+source .venv/bin/activate
 
-# Create a Python 3.12 venv
-uv venv --python 3.12
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
 
-# Activate the venv
-source .venv/bin/activate              # macOS / Linux
-# .venv\Scripts\activate               # Windows
-
-# Install AgentSUMO and all dependencies
-# (this also pulls agentsumo-mcp from PyPI as a dependency)
-uv pip install -e .
-```
-
-### 3. Configure environment variables
-
-AgentSUMO reads API keys and the SUMO path from environment variables. The easiest way is a `.env` file at the project root:
-```bash
 cp .env.example .env
 ```
 
-Open `.env` in your editor and fill in:
+### Start the application
 
-**`ANTHROPIC_API_KEY`** (required) — Claude API key that drives the Planner Agent. Get one at the [Anthropic Console](https://console.anthropic.com/settings/keys).
-```
-ANTHROPIC_API_KEY=sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-**`MAPBOX_TOKEN`** (required for the web UI) — used to render the basemap. Get one at the [Mapbox access tokens page](https://account.mapbox.com/access-tokens/).
-```
-MAPBOX_TOKEN=pk.eyJ1Ijoixxxxxxxxxxxxxxxxxx
-```
-
-**`SUMO_HOME`** (required) — absolute path to your local SUMO installation. The directory must contain `bin/sumo` (or `bin/sumo.exe` on Windows).
-```
-# macOS (Homebrew)
-SUMO_HOME=/opt/homebrew/share/sumo
-
-# macOS (Eclipse SUMO installer)
-SUMO_HOME=/Library/Frameworks/EclipseSUMO.framework/Versions/<version>/EclipseSUMO  # e.g. 1.24.0; use the directory name installed under Versions/
-
-# Windows
-SUMO_HOME=C:\Program Files (x86)\Eclipse\Sumo
-
-# Linux
-SUMO_HOME=/usr/share/sumo
-```
-
-**`AGENTSUMO_MCP_OUTPUT_BASE`** (optional) — override the base directory where the MCP server writes simulation outputs (networks, trips, results). Defaults to the current working directory.
-```
-AGENTSUMO_MCP_OUTPUT_BASE=/path/to/your/output/dir
-```
-
-### 4. Run
+Edit `.env` as needed, then run:
 
 ```bash
-# Web interface (opens at http://localhost:8000)
-python web.py
-
-# CLI mode
-python chat.py
-
-# Clean up simulation outputs
-python clean.py
+python -m uvicorn web.app:app --host 127.0.0.1 --port 8000
 ```
 
-## Project Structure
+Open:
 
-```
-AgentSUMO/
-├── agentsumo/
-│   ├── agent/        # Planner Agent (Claude orchestrator + prompts)
-│   ├── client/       # MCP clients (AgentSUMO, SQLite, Filesystem)
-│   └── core/         # Configuration
-├── agentsumo_mcp/    # AgentSUMO MCP Server source (also published to PyPI)
-│   └── defaults/     # Packaged fixtures (e.g., vehicle_types.add.xml)
-├── packaging/mcp/    # PyPI build configuration for agentsumo-mcp
-├── web/              # Web interface (FastAPI + Jinja2 templates)
-├── docs/             # Sphinx documentation source
-├── tests/            # Unit tests
-├── assets/           # README images
-├── output/           # Runtime artifacts (auto-populated; 8 categories tracked
-│                     #   via .gitkeep — simulations/, networks/, trips/,
-│                     #   analysis/, reports/, uploads/, visualizations/, additional/)
-├── chat.py           # CLI entry point
-├── web.py            # Web server entry point
-└── .env.example      # Environment variable template
-```
+- **Application:** http://127.0.0.1:8000
+- **API documentation:** http://127.0.0.1:8000/docs
+- **Readiness endpoint:** http://127.0.0.1:8000/api/health
 
-## Use the MCP Server Standalone
-
-The AgentSUMO MCP Server can be used independently from this framework with any MCP-compatible LLM client (Claude Desktop, OpenAI tool clients, Gemini, local LLMs):
+Alternatively, with uv:
 
 ```bash
-pip install agentsumo-mcp
+uv sync --extra dev
+uv run ditwin
 ```
 
-Or via [`uvx`](https://docs.astral.sh/uv/guides/tools/) without installing:
+## Configuration
+
+Copy `.env.example` to `.env` and configure the capabilities you need.
+
+| Variable | Purpose |
+|---|---|
+| `SUMO_HOME` | SUMO installation root containing `bin/sumo` or `bin/sumo.exe`. Executable discovery through PATH is also supported. |
+| `LLM_PROVIDER` | AI provider: `anthropic` or `groq`. |
+| `ANTHROPIC_API_KEY` | Server credential when using Anthropic. |
+| `GROQ_API_KEY` | Server credential when using Groq. |
+| `LLM_MODEL` | Optional tool-capable model identifier. |
+| `MULTI_AGENT_MODE` | Enables specialist advisory calls through the configured AI provider. |
+| `MAPBOX_TOKEN` | Optional public `pk.` token. Leave blank to use MapLibre and OpenStreetMap. |
+| `AGENTSUMO_MCP_OUTPUT_BASE` | Optional workspace root. Runtime data is stored under `<root>/output`. |
+
+Keep credentials in `.env`, which is excluded from Git.
+
+Without an AI credential, chat remains unavailable. Direct road and water workflows can still be used when their required tools and input data are available.
+
+## Road Simulation
+
+1. Import a georeferenced SUMO `.net.xml` network.
+2. Import matching traffic demand in `.rou.xml` or `.trips.xml` format.
+3. Open **Road simulation**.
+4. Select the network and demand files.
+5. Name the run and choose a duration from **30 to 7200 seconds**.
+6. Start the simulation and follow its status in **Runs**.
+7. Open replay, heatmap, or analysis when the corresponding outputs are available.
+
+Networks without a geographic projection are rejected because they cannot be placed accurately on the map.
+
+Simulation results depend on the supplied network and demand. They represent modeled conditions rather than live traffic observations.
+
+## Water Planning
+
+Open **Water simulation**, select a measurements JSON file, and click **Import measurements**.
+
+All fields below are required:
+
+| Field | Description |
+|---|---|
+| `source` | Source name or dataset reference, up to 200 characters |
+| `observed_at` | ISO 8601 observation timestamp including a timezone |
+| `production_m3_day` | Nonnegative production rate in cubic metres per day |
+| `demand_m3_day` | Nonnegative demand rate in cubic metres per day |
+| `storage_m3` | Nonnegative usable storage in cubic metres |
+| `storage_capacity_m3` | Positive storage capacity, at least equal to current storage |
+
+Unknown fields, nonfinite numbers, and invalid storage ranges are rejected.
+
+After importing measurements:
+
+1. Choose a forecast horizon from **1 to 168 hours**.
+2. Set production loss and demand reduction percentages.
+3. Select **Calculate forecast**.
+4. Review storage over time, cumulative unmet demand, and overflow.
+
+The model applies an hourly storage balance using constant adjusted production and demand rates:
+
+```text
+Hourly balance = Previous storage + (Daily production − Daily demand) / 24
+```
+
+Storage is bounded between zero and the supplied capacity. Shortfalls accumulate as unmet demand, and excess volume accumulates as overflow.
+
+Measurements persist in:
+
+```text
+output/water/measurements.json
+```
+
+Importing a new measurements file replaces the current dataset.
+
+### Water API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `PUT` | `/api/water/measurements` | Validate and store measurements |
+| `GET` | `/api/water/measurements` | Retrieve the current measurements |
+| `POST` | `/api/water/forecast` | Calculate a forecast from stored measurements |
+
+Forecast requests return **HTTP 409** when measurements have not been imported.
+
+## Architecture
+
+```text
+Browser
+  |
+  +-- 3D map and workspace interface
+  +-- Road simulation controls
+  +-- Water import and forecast charts
+  +-- Optional AI chat
+  |
+  v
+FastAPI application
+  |
+  +-- Workspace API --> SUMO jobs --> Replay and simulation outputs
+  |
+  +-- Water API --> Validated measurements --> Storage balance forecast
+  |
+  +-- AI WebSocket --> Provider --> MCP clients and simulation tools
+  |
+  +-- Local persistence --> Files, job records, and SQLite analysis
+```
+
+### Project Structure
+
+```text
+UrbanFlow-AI/
+├── agentsumo/                 # AI coordination, prompts, and MCP clients
+├── agentsumo_mcp/             # Bundled SUMO tool server and execution code
+├── web/
+│   ├── app.py                 # FastAPI application and AI WebSocket
+│   ├── workspace.py           # Asset imports, readiness, and SUMO jobs
+│   ├── water.py               # Water validation and forecast API
+│   ├── cli.py                 # Application command
+│   ├── templates/
+│   │   └── index.html         # Main interface
+│   └── static/
+│       ├── workspace.js       # Workspace interactions
+│       ├── workspace.css      # Interface styles
+│       ├── water.js           # Water workflow and chart
+│       ├── ditwin-city.js     # Geographic building layer
+│       ├── ditwin-logo.svg    # Project logo
+│       └── vendor/            # Bundled browser libraries and licenses
+├── tests/                     # Automated checks
+├── docs/                      # Documentation and upstream references
+├── output/                    # Local runtime data, excluded from Git
+├── .env.example               # Configuration template
+├── .gitignore
+├── pyproject.toml
+├── uv.lock
+├── README.md
+└── LICENSE
+```
+
+The application uses the Ditwin brand. Python package names remain `agentsumo` and `agentsumo_mcp` for compatibility with the upstream implementation.
+
+## Team
+
+| Member | Role | Areas of contribution |
+|---|---|---|
+| **Moussa Elaadmi** | Team leader and code integration | Project coordination, code assembly, module integration |
+| **Mohamed Belmaizi** | Frontend, LLM integration, and IoT | Web interfaces, language model integration, connected devices |
+| **Mohamed Jbiri** | Civil engineering | Urban infrastructure, network analysis, terrain constraints |
+| **Mehdi Elmouate** | AI, simulation, and backend | AI models, scenario simulation, backend services |
+| **Walid Charoune** | IT and security manager | IT systems, access management, data security |
+
+## Development
+
+Install development dependencies and run the checks:
 
 ```bash
-uvx agentsumo-mcp
+python -m pip install -e ".[dev]"
+python -m pytest tests/ -q
+git diff --check
 ```
 
-The server is registered in the official [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=agentsumo) under `io.github.mw-jeong/agentsumo-mcp`.
+Test fixtures remain isolated from application data and do not populate the workspace.
 
-## Troubleshooting
+GitHub Actions runs automated tests on pushes and pull requests to `main`.
 
-**SUMO path error** — Verify `SUMO_HOME` in your `.env`. The directory must contain `bin/sumo` (or `bin/sumo.exe` on Windows).
+## Temporary HTTPS Sharing
 
-**API key error** — Verify `ANTHROPIC_API_KEY` in your `.env` is set to a valid Claude API key. The Planner Agent will refuse to start without it.
+With the application running locally:
 
-**Dependency error** — Re-resolve dependencies:
 ```bash
-uv pip install -e . --upgrade
+cloudflared tunnel --url http://127.0.0.1:8000
 ```
 
-**Legacy token files (deprecated, scheduled for removal in 0.2.0)** — AgentSUMO still falls back to `claude_api.txt` and `mapbox_token.txt` at the project root when the corresponding environment variables are missing, but those code paths now emit a `DeprecationWarning` at import time. Use the `.env` workflow for new installations.
+Cloudflare prints a temporary HTTPS address.
 
-## Documentation
+Keep the application and tunnel processes running while sharing the link. Restarting a quick tunnel generates a new address.
 
-Full documentation lives at **[agentsumo.readthedocs.io](https://agentsumo.readthedocs.io)**.
+## Current Limitations
 
-- [Installation](https://agentsumo.readthedocs.io/en/latest/installation.html) — SUMO, Python 3.10+, environment setup
-- [Tools](https://agentsumo.readthedocs.io/en/latest/mcp_servers/agentsumo/index.html) — reference for all MCP tools
-- [Schema](https://agentsumo.readthedocs.io/en/latest/database/index.html) — `simulations.db` ER diagram and column reference
-- [Tutorials](https://agentsumo.readthedocs.io/en/latest/tutorials/index.html) — walkthroughs of the paper case studies
+- The application uses a single shared workspace and does not implement user authentication or tenant isolation.
+- Water forecasts use a storage mass balance rather than a hydraulic pressure or pipe-flow model.
+- Imported measurements require source verification by the user.
+- No live municipal sensor connection or automated infrastructure control is configured.
+- Building geometry and heights depend on map-provider data and may include inferred values.
+- AI capabilities require a valid provider credential and can incur provider charges.
+- Public deployment requires appropriate access control and operational configuration.
 
-## Citation
+## Acknowledgments
 
-If you use AgentSUMO in academic work, please cite:
+Ditwin builds on the AgentSUMO framework and retains its original licensing and attribution.
 
-```bibtex
-@article{jeong2025agentsumo,
-  title         = {AgentSUMO: An Agentic Framework for Interactive Simulation Scenario Generation in SUMO via Large Language Models},
-  author        = {Jeong, Minwoo and Chang, Jeeyun and Yoon, Yoonjin},
-  journal       = {arXiv preprint arXiv:2511.06804},
-  year          = {2025},
-  url           = {https://arxiv.org/abs/2511.06804}
-}
-```
+The project adapts and extends the upstream implementation with Ditwin branding, a revised interface, imported-data water planning, and improvements to simulation workflows.
+
+See [the preserved upstream README](docs/UPSTREAM_README.md) for the original project documentation and academic citation.
+
+The project also uses Eclipse SUMO, FastAPI, MapLibre GL JS, OpenStreetMap, OpenFreeMap, Chart.js, Marked, and DOMPurify. Relevant license notices remain with the distributed components.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Distributed under the **MIT License**. See [LICENSE](LICENSE).
 
 ---
 
 <div align="center">
 
-<sub>Developed at</sub>
-
-<img src="assets/logo_kaist.png" alt="KAIST" height="55"/> &nbsp;&nbsp;&nbsp;&nbsp;
-<img src="assets/logo_caus.png" alt="CAUS" height="55"/> &nbsp;&nbsp;&nbsp;&nbsp;
-<img src="assets/logo_stil.png" alt="Spatial Tech Innovation Lab" height="55"/>
+**Ditwin**  
+Road simulation and water planning for Laâyoune
 
 </div>

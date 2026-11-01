@@ -24,8 +24,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
+from fastapi import HTTPException
+from web.workspace import router as workspace_router, contained, filename, network_geojson, _run_lock
+from web.water import router as water_router
+from web.workspace import readiness
 
-from agentsumo import AgentSUMO
 from agentsumo.core import AgentSUMOConfig
 
 logger = logging.getLogger("agentsumo.web")
@@ -57,7 +60,7 @@ def find_network_file(network_name: str) -> Optional[Path]:
     """Find network file by name"""
     networks_dir = get_networks_dir()
     if networks_dir:
-        net_file = networks_dir / network_name
+        net_file = contained(networks_dir, filename(network_name))
         if net_file.exists():
             return net_file
     return None
@@ -70,7 +73,7 @@ def find_simulation_file(filename: str, pattern: str = None) -> Optional[Path]:
         return None
 
     # Exact match
-    exact_match = sims_dir / filename
+    exact_match = contained(sims_dir, filename)
     if exact_match.exists():
         return exact_match
 
@@ -83,18 +86,20 @@ def find_simulation_file(filename: str, pattern: str = None) -> Optional[Path]:
     return None
 
 # Global agent instance (singleton per server)
-_agent: Optional[AgentSUMO] = None
+_agent = None
 _agent_lock = asyncio.Lock()
+_chat_lock = asyncio.Lock()
 
 
-async def get_agent() -> AgentSUMO:
+async def get_agent():
     """Get or create AgentSUMO instance"""
     global _agent
 
     async with _agent_lock:
         if _agent is None:
+            from agentsumo import AgentSUMO
             logger.info("Creating new AgentSUMO instance...")
-            _agent = AgentSUMO(
+            candidate = AgentSUMO(
                 enable_debug=False,
                 interface="web",
                 enable_filesystem_mcp=True,
@@ -103,7 +108,15 @@ async def get_agent() -> AgentSUMO:
                     str(AgentSUMOConfig.OUTPUT_DIR)
                 ]
             )
-            await _agent.start()
+            try:
+                await candidate.start()
+            except BaseException:
+                try:
+                    await candidate.close()
+                except Exception:
+                    pass
+                raise
+            _agent = candidate
             logger.info("AgentSUMO ready!")
 
         return _agent
@@ -127,18 +140,14 @@ def create_app() -> FastAPI:
         # cryptic "MCP connection failed" further down the stack.
         llm_provider = os.environ.get("LLM_PROVIDER", "anthropic").lower()
         llm_key = "GROQ_API_KEY" if llm_provider == "groq" else "ANTHROPIC_API_KEY"
-        required = [llm_key, "MAPBOX_TOKEN", "SUMO_HOME"]
+        required = [llm_key]
         missing = [k for k in required if not os.environ.get(k)]
         if missing:
-            logger.error(
-                "Missing required environment variables: %s. "
-                "Copy .env.example to .env and fill them in (README §3).",
-                ", ".join(missing),
-            )
+            logger.info("AI chat is unavailable until a provider credential is configured.")
 
         sumo_home = os.environ.get("SUMO_HOME")
         if sumo_home:
-            sumo_bin = Path(sumo_home) / "bin" / "sumo"
+            sumo_bin = Path(sumo_home) / "bin" / ("sumo.exe" if os.name == "nt" else "sumo")
             if not sumo_bin.exists():
                 logger.error(
                     "SUMO_HOME=%s does not contain bin/sumo. "
@@ -155,8 +164,8 @@ def create_app() -> FastAPI:
         logger.info("AgentSUMO Web stopped")
 
     app = FastAPI(
-        title="UrbanFlow AI",
-        description="Hackathon-ready urban mobility simulation command center",
+        title="Ditwin",
+        description="Road simulation and water planning workspace",
         version="0.1.0",
         lifespan=lifespan
     )
@@ -165,6 +174,18 @@ def create_app() -> FastAPI:
     web_dir = Path(__file__).parent
     app.mount("/static", StaticFiles(directory=web_dir / "static"), name="static")
     templates = Jinja2Templates(directory=web_dir / "templates")
+    app.include_router(workspace_router)
+    app.include_router(water_router)
+
+    @app.middleware("http")
+    async def protect_local_workspace(request: Request, call_next):
+        origin = request.headers.get('origin')
+        if request.method in {'POST', 'PUT', 'PATCH', 'DELETE'} and origin and origin != f'{request.url.scheme}://{request.url.netloc}':
+            return JSONResponse(content={'error': 'Cross-origin workspace changes are not allowed'}, status_code=403)
+        response = await call_next(request)
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        return response
 
     # ============================================
     # Routes
@@ -178,7 +199,10 @@ def create_app() -> FastAPI:
     @app.get("/")
     async def index(request: Request):
         """Main page"""
-        mapbox_token = AgentSUMOConfig.get_mapbox_token()
+        try:
+            mapbox_token = AgentSUMOConfig.get_mapbox_token()
+        except RuntimeError:
+            mapbox_token = ""
         return templates.TemplateResponse(
             "index.html",
             {"request": request, "mapbox_token": mapbox_token}
@@ -195,7 +219,10 @@ def create_app() -> FastAPI:
     @app.get("/preview")
     async def preview_page(request: Request):
         """Main interface dark theme preview"""
-        mapbox_token = AgentSUMOConfig.get_mapbox_token()
+        try:
+            mapbox_token = AgentSUMOConfig.get_mapbox_token()
+        except RuntimeError:
+            mapbox_token = ""
         return templates.TemplateResponse(
             "main_dark.html",
             {"request": request, "mapbox_token": mapbox_token}
@@ -204,6 +231,8 @@ def create_app() -> FastAPI:
     @app.get("/api/state")
     async def get_state():
         """Get current agent state"""
+        if not readiness()['ai']['configured']:
+            return JSONResponse(content={'assistant': 'AI provider not configured', 'mode': 'unconfigured'})
         try:
             agent = await get_agent()
             state = agent.get_state()
@@ -272,7 +301,9 @@ def create_app() -> FastAPI:
                         # Skip hidden/internal files
                         if entry.name.startswith('.'):
                             continue
-                        rel_path = str(entry.relative_to(base_path))
+                        if entry.is_symlink():
+                            continue
+                        rel_path = entry.relative_to(base_path).as_posix()
                         if entry.is_dir():
                             children = build_tree(entry, base_path)
                             items.append({
@@ -340,7 +371,7 @@ def create_app() -> FastAPI:
                     status_code=404
                 )
 
-            report_file = output_dir / report_path
+            report_file = contained(output_dir, report_path)
             if not report_file.exists() or not report_file.suffix == ".html":
                 return JSONResponse(
                     content={"error": f"Report not found: {report_path}"},
@@ -351,6 +382,8 @@ def create_app() -> FastAPI:
                 path=str(report_file),
                 media_type="text/html"
             )
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error serving report: {e}")
             return JSONResponse(
@@ -369,60 +402,12 @@ def create_app() -> FastAPI:
                     status_code=404
                 )
 
-            # Parse network and convert to GeoJSON
-            net = sumolib.net.readNet(str(net_file))
-            features = []
+            return JSONResponse(content=await asyncio.to_thread(network_geojson, net_file))
 
-            for edge in net.getEdges():
-                shape = edge.getShape()
-                if len(shape) < 2:
-                    continue
-
-                # Convert to lon/lat
-                coords = [net.convertXY2LonLat(x, y) for x, y in shape]
-
-                features.append({
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "LineString",
-                        "coordinates": coords
-                    },
-                    "properties": {
-                        "id": edge.getID(),
-                        "name": edge.getName() or edge.getID(),
-                        "speed": edge.getSpeed(),
-                        "lanes": edge.getLaneNumber(),
-                        "length": edge.getLength(),
-                        "type": edge.getType()
-                    }
-                })
-
-            geojson = {
-                "type": "FeatureCollection",
-                "features": features
-            }
-
-            # Calculate center for map
-            if features:
-                all_coords = []
-                for f in features:
-                    all_coords.extend(f["geometry"]["coordinates"])
-
-                lons = [c[0] for c in all_coords]
-                lats = [c[1] for c in all_coords]
-                center = {
-                    "lon": sum(lons) / len(lons),
-                    "lat": sum(lats) / len(lats)
-                }
-            else:
-                center = {"lon": 127.028, "lat": 37.497}  # Default: Gangnam
-
-            return JSONResponse(content={
-                "geojson": geojson,
-                "center": center,
-                "edge_count": len(features)
-            })
-
+        except HTTPException:
+            raise
+        except ValueError as e:
+            return JSONResponse(content={"error": str(e)}, status_code=422)
         except Exception as e:
             logger.error(f"Error loading network: {e}")
             return JSONResponse(
@@ -468,7 +453,7 @@ def create_app() -> FastAPI:
             )
 
     @app.get("/api/heatmap/{network_name}/{simulation_name}")
-    async def get_heatmap_geojson(network_name: str, simulation_name: str, attribute: str = "density"):
+    def get_heatmap_geojson(network_name: str, simulation_name: str, attribute: str = "density"):
         """Get simulation results as GeoJSON heatmap for map display"""
         try:
             net_file = find_network_file(network_name)
@@ -608,7 +593,7 @@ def create_app() -> FastAPI:
     # ============================================
 
     @app.get("/api/dashboard")
-    async def get_dashboard_data(sim_a: str, sim_b: str = None):
+    def get_dashboard_data(sim_a: str, sim_b: str = None):
         """Get dashboard data for one or two simulations"""
         try:
             output_dir = get_output_dir()
@@ -626,6 +611,12 @@ def create_app() -> FastAPI:
 
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
+
+            if sim_b:
+                networks = conn.execute('SELECT simulation_id, net_file FROM simulations WHERE simulation_id IN (?, ?)', (sim_a, sim_b)).fetchall()
+                if len({Path(row['net_file']).name for row in networks if row['net_file']}) > 1:
+                    conn.close()
+                    return JSONResponse(content={"error": "Compare runs on the same road network"}, status_code=409)
 
             def get_kpi(sim_id):
                 r = conn.execute("""
@@ -1415,8 +1406,15 @@ def create_app() -> FastAPI:
             upload_dir = AgentSUMOConfig.OUTPUT_DIR / "uploads" / "od"
             upload_dir.mkdir(parents=True, exist_ok=True)
 
-            dest = upload_dir / file.filename
-            content = await file.read()
+            safe_name = filename(file.filename)
+            if not safe_name.lower().endswith('.csv'):
+                raise HTTPException(400, 'OD demand must be a CSV file')
+            dest = contained(upload_dir, safe_name)
+            if dest.exists():
+                raise HTTPException(409, 'File already exists; rename before uploading')
+            content = await file.read(30 * 1024 * 1024 + 1)
+            if len(content) > 30 * 1024 * 1024:
+                raise HTTPException(413, 'Maximum upload size is 30 MB')
             dest.write_bytes(content)
 
             logger.info(f"OD file uploaded: {file.filename} ({len(content)/1024:.1f} KB)")
@@ -1426,6 +1424,8 @@ def create_app() -> FastAPI:
                 "path": str(dest),
                 "size": len(content)
             })
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"OD upload failed: {e}")
             return JSONResponse(content={"error": str(e)}, status_code=500)
@@ -1440,8 +1440,15 @@ def create_app() -> FastAPI:
             uploaded = []
             shp_path = None
             for f in files:
-                dest = upload_dir / f.filename
-                content = await f.read()
+                safe_name = filename(f.filename)
+                if Path(safe_name).suffix.lower() not in {'.shp', '.shx', '.dbf', '.prj', '.cpg'}:
+                    raise HTTPException(400, 'Unsupported shapefile component')
+                dest = contained(upload_dir, safe_name)
+                if dest.exists():
+                    raise HTTPException(409, 'File already exists; rename before uploading')
+                content = await f.read(30 * 1024 * 1024 + 1)
+                if len(content) > 30 * 1024 * 1024:
+                    raise HTTPException(413, 'Maximum component size is 30 MB')
                 dest.write_bytes(content)
                 uploaded.append(f.filename)
                 if f.filename.endswith(".shp"):
@@ -1453,6 +1460,8 @@ def create_app() -> FastAPI:
                 "files": uploaded,
                 "shp_path": shp_path
             })
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Shapefile upload failed: {e}")
             return JSONResponse(content={"error": str(e)}, status_code=500)
@@ -1460,6 +1469,8 @@ def create_app() -> FastAPI:
     @app.post("/api/clean")
     async def clean_output():
         """Clean output directory (same logic as clean.py)"""
+        if _run_lock.locked() or _chat_lock.locked():
+            raise HTTPException(409, "Wait for active operations to finish before cleaning outputs")
         try:
             output_dir = get_output_dir()
             if output_dir is None:
@@ -1510,6 +1521,8 @@ def create_app() -> FastAPI:
     async def reset_session():
         """Reset entire session: clean output files + recreate AgentSUMO instance"""
         global _agent
+        if _run_lock.locked() or _chat_lock.locked():
+            raise HTTPException(409, "Wait for active operations to finish before resetting")
         try:
             # 1. Close existing agent (MCP connections)
             async with _agent_lock:
@@ -1658,11 +1671,16 @@ def create_app() -> FastAPI:
     @app.websocket("/ws/chat")
     async def websocket_chat(websocket: WebSocket):
         """WebSocket endpoint for chat"""
+        origin = websocket.headers.get('origin')
+        expected_origin = f'{"https" if websocket.url.scheme == "wss" else "http"}://{websocket.url.netloc}'
+        if origin and origin != expected_origin:
+            await websocket.close(code=1008)
+            return
         await websocket.accept()
         logger.info("WebSocket connection established")
 
         try:
-            agent = await get_agent()
+            agent = None
 
             # Set up progress callback — writes to file for polling
             _progress_file = Path(get_output_dir() or "/tmp") / ".tool_progress.json"
@@ -1700,12 +1718,12 @@ def create_app() -> FastAPI:
                 except Exception as e:
                     logger.warning(f"Failed to write progress: {e}")
 
-            agent.set_progress_callback(progress_callback)
+            # Initialize the provider only when a chat message is actually sent.
 
             # Send initial state
             await websocket.send_json({
                 "type": "state",
-                "data": agent.get_state()
+                "data": {"assistant": "Awaiting message"}
             })
 
             while True:
@@ -1719,6 +1737,12 @@ def create_app() -> FastAPI:
                     if not user_message:
                         continue
 
+                    if not readiness()['ai']['configured']:
+                        key = readiness()['ai']['required_variable']
+                        await websocket.send_json({'type': 'error', 'data': f'Configure {key} in .env and restart the server to enable AI chat.'})
+                        await websocket.send_json({'type': 'thinking', 'data': False})
+                        continue
+
                     # Send "thinking" indicator
                     await websocket.send_json({
                         "type": "thinking",
@@ -1727,7 +1751,10 @@ def create_app() -> FastAPI:
 
                     try:
                         # Get response from agent
-                        response = await agent.chat(user_message)
+                        async with _chat_lock:
+                            agent = await asyncio.wait_for(get_agent(), timeout=45)
+                            agent.set_progress_callback(progress_callback)
+                            response = await asyncio.wait_for(agent.chat(user_message), timeout=600)
 
                         # Send response
                         await websocket.send_json({
@@ -1759,10 +1786,11 @@ def create_app() -> FastAPI:
                         })
 
                 elif msg_type == "reset":
-                    agent.reset_conversation()
+                    if agent:
+                        agent.reset_conversation()
                     await websocket.send_json({
                         "type": "state",
-                        "data": agent.get_state()
+                        "data": agent.get_state() if agent else {}
                     })
                     await websocket.send_json({
                         "type": "info",
@@ -1774,6 +1802,10 @@ def create_app() -> FastAPI:
 
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
+            try:
+                await websocket.send_json({"type": "error", "data": "Assistant connection failed. Check provider configuration and server logs."})
+            except Exception:
+                pass
 
     return app
 

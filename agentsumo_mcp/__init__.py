@@ -1,9 +1,8 @@
-"""
-AgentSUMO MCP Server
+"""SUMO services. Importing a utility does not initialize the MCP server."""
+__version__ = '0.1.0'
 
-Provides MCP tools for SUMO traffic simulation.
-"""
-
-from .main import mcp
-
-__all__ = ["mcp"]
+def __getattr__(name):
+    if name == 'mcp':
+        from .main import mcp
+        return mcp
+    raise AttributeError(name)

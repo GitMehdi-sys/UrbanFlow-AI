@@ -5,16 +5,17 @@ description = "AgentSUMO: AI-Powered SUMO Traffic Simulation Platform with Claud
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12,<3.14"
 dependencies = [
-    # AgentSUMO MCP server (published separately on PyPI)
-    "agentsumo-mcp>=0.1.2",
+    # The repaired SUMO MCP server is shipped in this source distribution.
     # Reasoning backend
     "anthropic>=0.39.0",
     # OpenAI-compatible client used by the optional Groq provider
     "openai>=1.0.0",
     # Configuration loading
     "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.9",
+    "mcp-server-sqlite==2025.4.25",
     # Web interface
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
@@ -29,6 +30,7 @@ dependencies = [
     "folium>=0.20.0",
     # SUMO + XML
     "sumolib>=1.24.0",
+    "traci>=1.24.0",
     "lxml>=5.0.0",
     "rtree>=1.0.0",
     "osmium>=4.1.1",
@@ -41,7 +43,7 @@ dependencies = [
     "certifi>=2025.8.3",
     # MCP protocol library (also a transitive dep of agentsumo-mcp, but
     # imported directly by agentsumo/client)
-    "mcp[cli]>=1.13.1",
+    "mcp[cli]>=1.13.1,<2",
 ]
 
 [build-system]
@@ -52,8 +54,17 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agentsumo*"]
+include = ["agentsumo*", "web*"]
 exclude = ["data*", "output*", "checkpoints*", "tests*", "__pycache__*", "*.egg-info*", "sumo_mcp*", "examples*"]
 
 [tool.setuptools.package-data]
-agentsumo = ["*.txt", "*.json", "*.xml"]
+agentsumo = ["*.txt", "*.json", "*.xml", "agent/prompts/templates/*.md", "agent/additional_files_guide/*.md"]
+agentsumo_mcp = ["defaults/*.xml", "settings/*.xml"]
+web = ["templates/*.html", "static/*", "static/vendor/*"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+ditwin = "web.cli:main"
+urbanflow = "web.cli:main"

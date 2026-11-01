@@ -3,6 +3,7 @@ Settings for SUMO MCP Server.
 """
 
 import os
+import shutil
 from pathlib import Path
 
 
@@ -53,12 +54,19 @@ class SUMOEnvironment:
     @classmethod
     def get_tool_path(cls, tool_name: str) -> str:
         """Get path to SUMO tool."""
-        return os.path.join(cls.SUMO_HOME, "share", "sumo", "tools", tool_name)
+        for directory in (Path(cls.SUMO_HOME) / 'tools', Path(cls.SUMO_HOME) / 'share' / 'sumo' / 'tools'):
+            if (directory / tool_name).is_file():
+                return str(directory / tool_name)
+        raise FileNotFoundError(f'SUMO tool not found: {tool_name}; check SUMO_HOME')
 
     @classmethod
     def get_binary_path(cls, binary_name: str) -> str:
         """Get path to SUMO binary."""
-        return os.path.join(cls.SUMO_HOME, "bin", binary_name)
+        executable = binary_name + (".exe" if os.name == 'nt' and not binary_name.endswith('.exe') else "")
+        configured = Path(cls.SUMO_HOME) / 'bin' / executable
+        if configured.is_file():
+            return str(configured)
+        return shutil.which(executable) or str(configured)
 
 
 class SimulationSettings:

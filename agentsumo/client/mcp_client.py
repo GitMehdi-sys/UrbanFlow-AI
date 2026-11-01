@@ -6,7 +6,9 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+from agentsumo.core import AgentSUMOConfig
 import asyncio
+import sys
 import logging
 from datetime import datetime
 
@@ -53,7 +55,7 @@ class SUMOMCPClient:
     
     def __init__(
         self,
-        python_path: str = "python",
+        python_path: str = None,
         connection_timeout: float = 10.0,
         tool_timeout: float = 300.0,
         max_retries: int = 3,
@@ -69,7 +71,7 @@ class SUMOMCPClient:
             retry_delay: Delay between retries in seconds
             enable_logging: Whether to enable logging
         """
-        self.python_path = python_path
+        self.python_path = python_path or sys.executable
         self.connection_timeout = connection_timeout
         self.tool_timeout = tool_timeout
         self.max_retries = max_retries
@@ -170,7 +172,8 @@ class SUMOMCPClient:
         server_params = StdioServerParameters(
             command=self.python_path,
             args=["-m", self.server_module],
-            env=env  # Pass environment variables
+            env=env,  # Pass environment variables
+            cwd=str(AgentSUMOConfig.PROJECT_ROOT)
         )
 
         # STDIO context manager (with timeout)
